@@ -1,0 +1,652 @@
+---
+title: "CaseStudy1"
+author: "Chengbo (Barrett) Li, Jiyang (Edith) Xu, Bingheng (Jason) Li"
+date: "2022-10-17"
+output: html_document
+---
+## Part 1: Data Cleaning and Observations at First Look
+```{r}
+# import the data set
+CDI_ = read.table("CDI.txt", header = FALSE) 
+# assign names to the columns
+names(CDI_) = c("ID", "county", "state", "land.area", "total.population", "population%(18-24)", 
+               "population%(65+)", "active.physicians", "hospital.beds",
+               "crimes", "high.school%", "bachelor%", 
+               "below.poverty.level%", "unemployment%", "percent.capita.Income", 
+               "total.personal.income", "geographic.region")
+# remove the ID column, the county column, and the state column. We thought of taking the state column and encoding each state to corresponding number. However, there are 50 states. If we have time in the future, we can separate our data into states and provide predictions base on each state.
+CDI = CDI_[, c(-1, -2, -3)]
+# inspect the data
+head(CDI)
+summary(CDI)
+```
+After cleaning up and inspecting the dataset, we want to inspect the correlation matrix.
+```{r}
+cor(CDI[,-c(5)]) #ignore the response `active.physicians` when looking at the correlation matrix
+```
+
+##### Assumptions:
+##### 1) Percent of population aged 18-24, Percent of population 65 or older, and Total population:
+These three predictors may have high collinearity because the first two predictors are just different proportions of the third predictor.
+
+##### 2) Per capita Income, Total Personal Income, and Total population:
+These three predictor should have collinearity because per capita income is total personal income divided by the total population.
+
+### High correlation(s)
+<br/>
+(We consider correlations that are higher than 0.9 as high correlation)
+
+hospital.beds & total.population : 0.923738360
+
+total.personal.income & total.population : 0.986747626
+
+hospital.beds & total.personal.income : 0.902061545
+
+<br/>
+Among all the correlations, `total.population`, `hospital.beds` and `total.personal.income` have relatively high correlations with each other. Since collinearity affects the p-values, we plan to combine the number of hospital beds and the total population together. More specifically, we will create a new column called "hospital.beds.avg", which will be derived by dividing the number of hospital beds by the total population for each row. 
+```{r}
+CDI$hospital.beds.avg = c(CDI$hospital.beds / CDI$total.population)
+CDI = CDI[,c(-2, -6)] # remove the original columns (hospital.beds, total.population)
+```
+Now check the correlation matrix again.
+```{r}
+cor(CDI[,c(-4)])
+```
+So we are good now! 
+<br/>
+<br/>
+Next, we are going to fit a MLR model with all the predictors left. This is going to be our full linear regression model.
+```{r}
+# fit a MLR model with all the variables
+CDI.mlr1 = lm(active.physicians~., data = CDI)
+summary(CDI.mlr1)
+```
+In order to optimize the model, we will remove variables that are not statistically significant using a testing-based approach.
+<br/>
+Our plan is to test each predictor one by one to see if the predictor is statistically significant to ensure if we can drop it or not.
+
+
+## Part 2: Testing Predictors in MLR
+
+#### Calculate the coefficient of multiple determination ${R}^{2}$
+From the previous summary function, we see that the multiple determination ${R}^{2}$ is approximately 93%, representing this model can explain some variation (93%) in the response variable; but high R2 does not always mean the regression model is a useful one.
+
+#### Testing for all the predictors
+Null Hypothesis ($H_0$): $β_2$ = $β_3$ = $β_4$ = ... = $β_{13}$ = 0
+
+Alternative Hypothesis($H_1$): $β_j$ ≠ 0, for some j = 2, 3, 4,..,13
+
+In this case, the F statistic is equal to 445.3 and it follows an F distribution with p=12 (excluding the intercept) and degrees of freedom of 427. The corresponding p-value is equal to 2.2e-16, approximately 0, which is smaller than α = 0.05. This implies that we reject the null and conclude that the model with all the predictors is more adequate compared to the intercept-only model.
+<br/>
+In addition, by observing the p-values next to each predictor, we are going to conduct Partial F test on predictors that have a p-value greater than 0.05, namely all predictors except for $β_7$, $β_{11}$, and $β_{13}$
+
+##### For reference:
+$β_2$- `land.area`<br/>
+$β_3$- `population%(18-24)`<br/>
+$β_4$- `population%(65+)`<br/>
+$β_5$- `crimes`<br/>
+$β_6$- `high.school%`<br/>
+$β_7$- `bachelor%`<br/>
+$β_8$- `below.poverty.level%`<br/>
+$β_9$- `unemployment%`<br/>
+$β_{10}$- `percent.capita.Income`<br/>
+$β_{11}$- `total.personal.income`<br/>
+$β_{12}$- `geographic.region`<br/>
+$β_{13}$- `hospital.beds.avg`<br/>
+
+#### Reduced model tests for $β_2$, $β_3$, $β_4$,$β_5$, $β_6$, $β_8$, $β_9$, $β_{10}$, and $β_{12}$ to check if we can drop them
+We plan to use the "backward" approach, where we start with full model and remove predictors one at a time. 
+<br/>
+We will start with the predictor with the largest p-value, namely $β_{12}$, `geographic.region`.
+<br/>
+<br/>
+Null Hypothesis ($H_0$): $β_{12}$ = 0
+<br/>
+Alternative Hypothesis($H_1$): $β_{12}$ ≠ 0
+```{r}
+#### $β_{12}$
+#### geographic.region
+CDI.red12 = lm(active.physicians~land.area + `population%(18-24)` +`population%(65+)`+ crimes + `high.school%` + `bachelor%` + `below.poverty.level%` + `unemployment%` + percent.capita.Income + total.personal.income + hospital.beds.avg, data=CDI)
+anova(CDI.red12, CDI.mlr1)
+```
+Based on the anova table, the p-value is 0.8773. Since it is larger than 0.05 significance level, we fail to reject the null hypothesis and we conclude that the reduced model is adequate and we shall drop $β_{12}$, "geographic.region", from our full model.
+<br/>
+<br/>
+Next, we are going to test $β_9$, `unemployment%`.
+<br/>
+<br/>
+Null Hypothesis ($H_0$): $β_9$ = 0
+<br/>
+Alternative Hypothesis($H_1$): $β_9$ ≠ 0
+```{r}
+#### $β_9$
+CDI.mlr1 = CDI.red12 # update the original model
+CDI.red9 = lm(active.physicians~land.area + `population%(18-24)` +`population%(65+)`+ crimes + `high.school%` + `bachelor%` + `below.poverty.level%` + percent.capita.Income + total.personal.income + hospital.beds.avg, data=CDI)
+anova(CDI.red9, CDI.mlr1)
+```
+Based on the anova table, the p-value is 0.842. Since it is larger than 0.05 significance level, we fail to reject the null hypothesis and we conclude that the reduced model is adequate and we shall drop $β_9$, "unemployment%", from our full model.
+<br/>
+<br/>
+Next, we are going to test $β_5$, `crimes`.
+<br/>
+<br/>
+Null Hypothesis ($H_0$): $β_5$ = 0
+<br/>
+Alternative Hypothesis($H_1$): $β_5$ ≠ 0
+```{r}
+#### $β_5$
+CDI.mlr1 = CDI.red9 # update the original model
+CDI.red5 = lm(active.physicians~land.area + `population%(18-24)` +`population%(65+)`+ `high.school%` + `bachelor%` + `below.poverty.level%` + percent.capita.Income + total.personal.income + hospital.beds.avg, data=CDI)
+anova(CDI.red5, CDI.mlr1)
+```
+Based on the anova table, the p-value is 0.7409. Since it is larger than 0.05 significance level, we fail to reject the null hypothesis and we conclude that the reduced model is adequate and we shall drop $β_5$, "crime", from our full model.
+<br/>
+<br/>
+Next, we are going to test $β_{10}$, `percent.capita.Income`.
+<br/>
+<br/>
+Null Hypothesis ($H_0$): $β_{10}$ = 0
+<br/>
+Alternative Hypothesis($H_1$): $β_{10}$ ≠ 0
+```{r}
+#### $β_10$
+CDI.mlr1 = CDI.red5 # update the original model
+CDI.red10 = lm(active.physicians~land.area + `population%(18-24)` +`population%(65+)`+ `high.school%` + `bachelor%` + `below.poverty.level%` + total.personal.income + hospital.beds.avg, data=CDI)
+anova(CDI.red10, CDI.mlr1)
+```
+Based on the anova table, the p-value is 0.55. Since it is larger than 0.05 significance level, we fail to reject the null hypothesis and we conclude that the reduced model is adequate and we shall drop $β_{10}$, "percent.capita.Income", from our full model.
+<br/>
+<br/>
+Next, we are going to test $β_4$, `population%(65+)`.
+<br/>
+<br/>
+Null Hypothesis ($H_0$): $β_4$ = 0
+<br/>
+Alternative Hypothesis($H_1$): $β_4$ ≠ 0
+```{r}
+#### $β_4$
+CDI.mlr1 = CDI.red10 # update the original model
+CDI.red4 = lm(active.physicians~land.area + `population%(18-24)` + `high.school%` + `bachelor%` + `below.poverty.level%` + total.personal.income + hospital.beds.avg, data=CDI)
+anova(CDI.red4, CDI.mlr1)
+```
+Based on the anova table, the p-value is 0.51. Since it is larger than 0.05 significance level, we fail to reject the null hypothesis and we conclude that the reduced model is adequate and we shall drop $β_4$, "population%(65+)", from our full model.
+<br/>
+<br/>
+Next, we are going to test $β_3$, `population%(18-24)`.
+<br/>
+<br/>
+Null Hypothesis ($H_0$): $β_3$ = 0
+<br/>
+Alternative Hypothesis($H_1$): $β_3$ ≠ 0
+```{r}
+#### $β_3$
+CDI.mlr1 = CDI.red4 # update the original model
+CDI.red3 = lm(active.physicians~land.area + `high.school%` + `bachelor%` + `below.poverty.level%` + total.personal.income + hospital.beds.avg, data=CDI)
+anova(CDI.red3, CDI.mlr1)
+```
+Based on the anova table, the p-value is 0.07675. Since it is larger than 0.05 significance level, we fail to reject the null hypothesis and we conclude that the reduced model is adequate and we shall drop $β_3$, "population%(18-24)", from our full model.
+<br/>
+<br/>
+Next, we are going to test $β_6$, `high.school%`.
+<br/>
+<br/>
+Null Hypothesis ($H_0$): $β_6$ = 0
+<br/>
+Alternative Hypothesis($H_1$): $β_6$ ≠ 0
+
+```{r}
+#### $β_6$
+CDI.mlr1 = CDI.red3 # update the original model
+CDI.red6 = lm(active.physicians~land.area + `bachelor%` + `below.poverty.level%` + total.personal.income + hospital.beds.avg, data=CDI)
+anova(CDI.red6, CDI.mlr1)
+```
+Based on the anova table, the p-value is 0.2027. Since it is larger than 0.05 significance level, we fail to reject the null hypothesis and we conclude that the reduced model is adequate and we shall drop $β_6$, "high.school%", from our full model.
+<br/>
+<br/>
+Next, we are going to test $β_2$, `land.area`.
+<br/>
+<br/>
+Null Hypothesis ($H_0$): $β_2$ = 0
+<br/>
+Alternative Hypothesis($H_1$): $β_2$ ≠ 0
+```{r}
+#### $β_2$
+CDI.mlr1 = CDI.red6 # update the original model
+CDI.red2 = lm(active.physicians~`bachelor%` + `below.poverty.level%` + total.personal.income + hospital.beds.avg, data=CDI)
+anova(CDI.red2, CDI.mlr1)
+```
+Based on the anova table, the p-value is 0.08375. Since it is larger than 0.05 significance level, we fail to reject the null hypothesis and we conclude that the reduced model is adequate and we shall drop $β_2$, "land.area", from our full model.
+<br/>
+<br/>
+Lastly, we are going to test $β_8$, `below.poverty.level%`.
+<br/>
+<br/>
+Null Hypothesis ($H_0$): $β_8$ = 0
+<br/>
+Alternative Hypothesis($H_1$): $β_8$ ≠ 0
+```{r}
+CDI.mlr1 = CDI.red2 # update the original model
+CDI.red8 = lm(active.physicians~`bachelor%` + total.personal.income + hospital.beds.avg, data=CDI)
+anova(CDI.red8, CDI.mlr1)
+```
+Based on the anova table, the p-value is 8.903e-06. Since it is smaller than 0.05 significance level, we reject the null hypothesis and we conclude that the reduced model is not adequate and we shall not drop $β_8$, "below.poverty.level%", from our full model.
+<br/>
+<br/>
+Now we have our reduced model!
+```{r}
+summary(CDI.mlr1)
+```
+<br/>
+
+## Part 3: Diagnostic
+
+```{r}
+CDI_red = CDI[,c(-1,-2,-3,-5,-6,-9,-10,-12)] # reduced model
+head(CDI_red)
+```
+
+In this part, we will check the data set for unusual observation, specifically high leverage points, outliers, and influential points
+
+### Part 3a: Detect Unusual Observations: High Leverage Points, Outliers, Highly Influential Points:
+#### - 1) High Leverage Points
+```{r}
+CDI.leverages = lm.influence(CDI.mlr1)$hat
+head(CDI.leverages)
+```
+Check the half-normal plot
+```{r}
+library(faraway)
+halfnorm(CDI.leverages, 6, as.character(1:length(CDI.leverages)), ylab = "Leverages")
+```
+
+In the plot above, we can clearly see some leverages that seem to be large. 
+<br/>
+Next we determine which of the leverages exceed the 2p/n threshold.
+```{r}
+n = dim(CDI)[1]
+p = length(variable.names(CDI.mlr1))
+CDI.leverages.high = CDI.leverages[CDI.leverages>2*p/n]
+#Sorting the high leverages in descending order
+CDI.leverages.high = sort(abs(CDI.leverages.high), decreasing = TRUE)
+CDI.leverages.high
+```
+```{r}
+length(CDI.leverages.high)
+```
+```{r}
+length(CDI.leverages.high)/n
+```
+We observe that we have 30 high leverage points, representing about 6.8% of the observations.
+<br/>
+The next step is to determine good leverage points and bad leverage points.
+```{r}
+IQR_y = IQR(CDI_red$active.physicians)
+QT1_y = quantile(CDI_red$active.physicians, 0.25)
+QT3_y = quantile(CDI_red$active.physicians, 0.75)
+lower_lim_y = QT1_y - IQR_y
+upper_lim_y = QT3_y + IQR_y
+vector_lim_y = c(lower_lim_y,upper_lim_y)
+vector_lim_y
+```
+Next, we filter the data frame of high-leverage points and extract only the ones outside the range above, which are the "bad leverage points"
+```{r}
+CDI.highlev = CDI_red[CDI.leverages>2*p/n,]
+# Select only the observations with leverage points outside the range 
+CDI.highlev_lower = CDI.highlev[CDI.highlev$active.physicians < vector_lim_y[1], ]
+CDI.highlev_upper = CDI.highlev[CDI.highlev$active.physicians > vector_lim_y[2], ]
+CDI.highlev2 = rbind(CDI.highlev_lower,CDI.highlev_upper)
+CDI.highlev2
+```
+Therefore, there are 13 "bad" high-leverage points. 
+
+#### - 2) Outliers
+####### We plan to use the Bonferroni test to test for outliers. For that purpose, we need to compute the studentized residuals $t_i$. Under the null hypothesis $H_0$, $t_i∼T_{n−p−1}$, where n is the sample size and p is the number of predictors including the intercept. We perform this test for all n observations testing case at level α/n:
+
+```{r}
+n = dim(CDI)[1]; # Sample size
+n
+```
+
+```{r}
+p = length(variable.names(CDI.mlr1)) # Predictor size
+p
+```
+We first compute the studentized residuals using the rstudent R function and the Bonferroni critical value using Student’s distribution:
+```{r}
+# Computing Studentized Residuals
+CDI.resid = rstudent(CDI.mlr1);
+
+# Critical value With Bonferroni correction
+bonferroni_cv = qt(.05/(2*n), n-p-1)
+bonferroni_cv
+```
+Now, we need to find which studentized residuals exceed the Bonferroni critical value:
+```{r}
+# Sorting the residuals in descending order to find outliers 
+CDI.resid.sorted = sort(abs(CDI.resid), decreasing = TRUE)[1:15]
+print(CDI.resid.sorted)
+```
+```{r}
+# Finding outliers: if the studentized residual values are greater than the critical t value, then we consider it as the outlier
+CDI.outliers = CDI.resid.sorted[abs(CDI.resid.sorted) > abs(bonferroni_cv)]
+print(CDI.outliers)
+```
+Above, we computed a t-value of |-3.895092| at α=0.05. If an observation’s studentized residual is higher (in absolute value) than the critical value of the T distribution with Bonferroni correction, then this observation will be considered an outlier. According to this criterion, we can see that we have four outliers in the data set: 50, 11, 67, 48
+
+#### - 3) Highly Influential Points
+To check for high influential points, we will use Cook’s distance with the cooks.distance R function:
+```{r}
+CDI.cooks = cooks.distance(CDI.mlr1)
+sort(CDI.cooks, decreasing = TRUE)[1:15]
+```
+Since the Cook’s distance is greater than 1 for high influential points, we can see that there are no influential points in the data. 
+<br/>
+Still, we can plot Cook’s distance calculated for every observation:
+```{r}
+plot(CDI.cooks)
+```
+
+Again, we see that there are no observations with Cook’s Distance greater than 1.
+
+### Part 3b: Checking Constancy of Variance, Normality, Non-linearity, and Collinearity
+#### - 1) Checking Constancy of Variance 
+We will start by using a residuals plot and specifically the residuals against fitted values:
+```{r}
+plot(CDI.mlr1, which=1)
+```
+
+Observing the residuals plot, we discovered that the points on the plot are not randomly scattered around the zero line, so we conclude that the constant variance assumption is not satisfied.
+<br/>
+To further support our conclusion, we decided to conduct the Breusch-Pagan test.
+<br/>
+$H_0$: the variance is constant
+<br/>
+$H_a$: the variance is not constant
+```{r}
+library(lmtest)
+bptest(CDI.mlr1)
+```
+
+The p-value of 3.413e-09 is smaller than the significance level α=0.05. So, we reject the null hypotheses of homoscedasticity and conclude that the constant variance assumption is not satisfied.
+
+#### - 2) Checking Normality
+We start our analysis by looking at two plots: the QQ-plot and the histogram of the residuals.
+```{r}
+plot(CDI.mlr1, which = 2)
+```
+
+It seems that the points in the QQ-plot do not fall on a straight line. We decided to also plot the histogram of the residuals. 
+```{r}
+hist(CDI.mlr1$residuals)
+```
+
+Therefore, We seem to have departures the normality assumption. We are going to perform a hypothesis test to check the normality assumption to ensure our assumption. Since our data set has 440 observations, it is preferable to use the Kolmogorov-Smirnov Test.
+<br/>
+$H_0$: the distribution is normal
+<br/>
+$H_a$: the distribution is not normal
+```{r}
+ks.test(CDI.mlr1$residuals, "pnorm")
+```
+The p-value of 2.2e-16 is significantly less than the significance level α=0.05. So, we reject the null hypotheses of normality and conclude that the normality assumption is not satisfied. We will perform Box-Cox transformations in Part 3c to remedy the departures from the normality assumptions.
+
+#### - 3) Checking Linearity
+We now want to check for the structure of the relationship between the predictors and the response. Specifically, we want to create added variables/partial regression plots, one for each of the predictors in the model.
+
+###### a) Checking linearity with respect to 'bachelor%'
+```{r}
+y.bachelor = update(CDI.mlr1, .~. -`bachelor%`)$res
+x.bachelor = lm(`bachelor%`  ~ ., data = CDI_red[,-c(4)])$res
+plot(x.bachelor, y.bachelor, xlab="Bachelor% Residuals", ylab="Active.Physicians Residuals", col='Darkblue', pch=3, size=3)
+abline(lm(y.bachelor ~ x.bachelor), col='Darkblue', lwd=2)
+abline(v = 0, col="red", lty=3)
+abline(h = 0, col="red", lty=3)
+```
+
+###### b) Checking linearity with respect to 'below.poverty.level%'
+```{r}
+y.poverty = update(CDI.mlr1, .~. -`below.poverty.level%`)$res
+x.poverty = lm(`below.poverty.level%` ~ ., data = CDI_red[,-c(4)])$res
+plot(x.poverty, y.poverty, xlab="Below.Poverty.Line Residuals", ylab="Active.Physicians Residuals", col='Darkblue', pch=3, size=3)
+abline(lm(y.poverty ~ x.poverty), col='Darkblue', lwd=2)
+abline(v = 0, col="red", lty=3)
+abline(h = 0, col="red", lty=3)
+```
+
+###### c) Checking linearity with respect to 'total.personal.income'
+```{r}
+y.personal.income = update(CDI.mlr1, .~. -total.personal.income)$res
+x.personal.income = lm(total.personal.income ~ ., data = CDI_red[,-c(1)])$res
+plot(x.personal.income, y.personal.income, xlab="Total.Personal.Income Residuals", ylab="Active.Physicians Residuals", col='Darkblue', pch=3, size=3)
+abline(lm(y.personal.income ~ x.personal.income), col='Darkblue', lwd=2)
+abline(v = 0, col="red", lty=3)
+abline(h = 0, col="red", lty=3)
+```
+
+###### d) Checking linearity with respect to 'hospital.beds.avg'
+```{r}
+y.hospital.beds.avg = update(CDI.mlr1, .~. -hospital.beds.avg)$res
+x.hospital.beds.avg = lm(hospital.beds.avg ~ ., data = CDI_red[,-c(4)])$res
+plot(x.hospital.beds.avg, y.hospital.beds.avg, xlab="Hospital.Beds.Avg Residuals", ylab="Active.Physicians Residuals", col='Darkblue', pch=3, size=3)
+abline(lm(y.hospital.beds.avg ~ x.hospital.beds.avg), col='Darkblue', lwd=2)
+abline(v = 0, col="red", lty=3)
+abline(h = 0, col="red", lty=3)
+```
+
+Observing the four plots above, the points appear to be randomly scattered around the fitted regression line and the blue line is not horizontal, so the linearity assumption seems to be satisfied here.
+
+#### - 4) Checking Collinearity
+Lastly, we will try to detect collinearity in our data.
+<br/>
+We first investigate the new correlation matrix
+```{r}
+round(cor(CDI_red[-1]), dig=2) # we ignore the response column
+```
+Observing the correlation matrix, there are not any high-correlated predictors (>= 0.9). 
+
+### Part 3c: Box-Cox Transformation (if non-normal)
+We plan to use to Box-Cox method to remedy departures from the normality assumptions and reduce non-linearity.
+```{r}
+library(MASS)
+CDI.transformation = boxcox(CDI.mlr1, lambda = seq(-2, 2, length=400))
+```
+```{r}
+lambda = CDI.transformation$x[which.max(CDI.transformation$y)]
+lambda
+```
+Based on the output, we say that a value of lambda near 0.1553885 would probably fix the departure from the normality assumption. Here,  
+λ = 0 is selected, which means that we will perform a log transformation on Y.
+```{r}
+# Transform Y
+CDI_red$active.physicians.new = log(CDI_red$active.physicians)
+# Re-fit the mo
+CDI.mlr.tr1 = lm(active.physicians.new ~ ., data=CDI_red[,-1])
+```
+Let’s plot the diagnostic plots to see if we managed to fixed any of the issues:
+```{r}
+plot(CDI.mlr.tr1)
+```
+```{r}
+hist(CDI.mlr.tr1$residuals)
+```
+
+The model seems to be better now. Let's run the ks.test. 
+<br/>
+$H_0$: the distribution is normal
+<br/>
+$H_a$: the distribution is not normal
+```{r}
+ks.test(CDI.mlr.tr1$residuals, "pnorm")
+```
+Running the test again giving us a p-value of 3.819e-08, which is still smaller than the 0.05 significance level; therefore, we reject the null hypotheses of normality and conclude that the normality assumption is not satisfied.
+<br/>
+Since we transform our model, we need to do the diagnostics again.
+
+### Dignostics of Transformed Model:
+
+### Part 1: Detect Unusual Observations: High Leverage Points, Outliers, Highly Influential Points:
+
+#### - 1) High Leverage Points
+
+```{r}
+CDI.leverages.tr1 = lm.influence(CDI.mlr.tr1)$hat
+head(CDI.leverages.tr1)
+```
+Check the half-normal plot
+```{r}
+library(faraway) 
+halfnorm(CDI.leverages.tr1, 6, as.character(1:length(CDI.leverages)), ylab = "Leverages")
+```
+
+<br/>
+Next we determine which of the leverages exceed the 2p/n threshold.
+```{r}
+n = dim(CDI_red)[1]
+p = length(variable.names(CDI.mlr.tr1))
+CDI.leverages.high.tr1 = CDI.leverages.tr1[CDI.leverages.tr1>2*p/n]
+#Sorting the high leverages in descending order
+CDI.leverages.high.tr1 = sort(abs(CDI.leverages.high.tr1), decreasing = TRUE)
+CDI.leverages.high.tr1
+```
+```{r}
+length(CDI.leverages.high.tr1)
+```
+```{r}
+length(CDI.leverages.high.tr1)/n
+```
+We observe that we have 30 high leverage points, representing about 6.8% of the observations.
+<br/>
+The next step is to determine good leverage points and bad leverage points.
+```{r}
+IQR_y = IQR(CDI_red$active.physicians)
+QT1_y = quantile(CDI_red$active.physicians, 0.25)
+QT3_y = quantile(CDI_red$active.physicians, 0.75)
+lower_lim_y = QT1_y - IQR_y
+upper_lim_y = QT3_y + IQR_y
+vector_lim_y = c(lower_lim_y,upper_lim_y)
+vector_lim_y
+```
+Next, we filter the data frame of high-leverage points and extract only the ones outside the range above, which are the "bad leverage points"
+```{r}
+CDI.highlev.tr1 = CDI_red[CDI.leverages.tr1>2*p/n,]
+# Select only the observations with leverage points outside the range 
+CDI.highlev_lower.tr1 = CDI.highlev.tr1[CDI.highlev.tr1$active.physicians < vector_lim_y[1], ]
+CDI.highlev_upper.tr1 = CDI.highlev.tr1[CDI.highlev.tr1$active.physicians > vector_lim_y[2], ]
+CDI.highlev2.tr1 = rbind(CDI.highlev_lower.tr1,CDI.highlev_upper.tr1)
+CDI.highlev2.tr1
+```
+Therefore, there are 13 "bad" high-leverage points. 
+
+#### - 2) Outliers
+####### We plan to use the Bonferroni test to test for outliers. For that purpose, we need to compute the studentized residuals $t_i$. Under the null hypothesis $H_0$, $t_i∼T_{n−p−1}$, where n is the sample size and p is the number of predictors including the intercept. We perform this test for all n observations testing case at level α/n:
+
+```{r}
+n = dim(CDI_red)[1]; # Sample size
+n
+```
+
+```{r}
+p = length(variable.names(CDI.mlr.tr1)) # Predictor size
+p
+```
+We first compute the studentized residuals using the rstudent R function and the Bonferroni critical value using Student’s distribution:
+```{r}
+# Computing Studentized Residuals
+CDI.resid = rstudent(CDI.mlr.tr1);
+
+# Critical value WITH Bonferroni correction
+bonferroni_cv = qt(.05/(2*n), n-p-1)
+bonferroni_cv
+```
+Now, we need to find which studentized residuals exceed the Bonferroni critical value:
+```{r}
+# Sorting the residuals in descending order to find outliers 
+CDI.resid.sorted = sort(abs(CDI.resid), decreasing = TRUE)[1:15]
+print(CDI.resid.sorted)
+```
+```{r}
+# Finding outliers: if the studentized residual values are greater than the critical t value, then we consider it as the outlier
+CDI.outliers = CDI.resid.sorted[abs(CDI.resid.sorted) > abs(bonferroni_cv)]
+print(CDI.outliers)
+```
+Above, we computed a t-value of |-3.895092| at α=0.05. If an observation’s studentized residual is higher (in absolute value) than the critical value of the T distribution with Bonferroni correction, then this observation will be considered an outlier. According to this criterion, we can see that we have one outlier in the data set: 1
+
+#### - 3) Highly Influential Points
+To check for high influential points, we will use Cook’s distance with the cooks.distance R function:
+```{r}
+CDI.cooks = cooks.distance(CDI.mlr.tr1)
+sort(CDI.cooks, decreasing = TRUE)[1:15]
+```
+Based on the rule-of-thumb (Cook’s distance ≥1 for high influential points), we can see that there are no influential points in the data. 
+Still, we can plot Cook’s distance calculated for every observation:
+```{r}
+plot(CDI.cooks)
+```
+
+Again, we see that there are no observations with Cook’s Distance greater than 1, this indicates that there is no high influential points
+
+### Part 2: Checking Constancy of Variance, Non-linearity, and Collinarity
+#### - 1) Checking Constancy of Variance 
+We will start by using a residuals plot and specifically the residuals against fitted values:
+```{r}
+plot(CDI.mlr.tr1, which=1)
+```
+
+Observing the residuals plot, we discovered that the points on the plot are not randomly scattered around the zero line, so we conclude that the constant variance assumption is not satisfied.
+<br/>
+To further support our conclusion, we decided to conduct the Breusch-Pagan test.
+<br/>
+$H_0$: the variance is constant
+<br/>
+$H_a$: the variance is not constant
+```{r}
+library(lmtest)
+bptest(CDI.mlr.tr1)
+```
+
+The p-value of 2.2e-16 is smaller than the significance level α=0.05. So, we reject the null hypotheses of homoscedasticity and conclude that the constant variance assumption is not satisfied.
+
+#### - 2) Checking Linearity
+We now want to check for the structure of the relationship between the predictors and the response. Specifically, we want to create added variables/partial regression plots, one for each of the predictors in the model.
+
+###### a) Checking linearity with respect to 'bachelor%'
+```{r}
+y.bachelor = update(CDI.mlr.tr1, .~. -`bachelor%`)$res
+x.bachelor = lm(`bachelor%`  ~ ., data = CDI_red[,-c(4)])$res
+plot(x.bachelor, y.bachelor, xlab="Bachelor% Residuals", ylab="Active.Physicians Residuals", col='Darkblue', pch=3, size=3)
+abline(lm(y.bachelor ~ x.bachelor), col='Darkblue', lwd=2)
+abline(v = 0, col="red", lty=3)
+abline(h = 0, col="red", lty=3)
+```
+
+###### b) Checking linearity with respect to 'below.poverty.level%'
+```{r}
+y.poverty = update(CDI.mlr.tr1, .~. -`below.poverty.level%`)$res
+x.poverty = lm(`below.poverty.level%` ~ ., data = CDI_red[,-c(4)])$res
+plot(x.poverty, y.poverty, xlab="Below.Poverty.Line Residuals", ylab="Active.Physicians Residuals", col='Darkblue', pch=3, size=3)
+abline(lm(y.poverty ~ x.poverty), col='Darkblue', lwd=2)
+abline(v = 0, col="red", lty=3)
+abline(h = 0, col="red", lty=3)
+```
+
+###### c) Checking linearity with respect to 'total.personal.income'
+```{r}
+y.personal.income = update(CDI.mlr.tr1, .~. -total.personal.income)$res
+x.personal.income = lm(total.personal.income ~ ., data = CDI_red[,-c(1)])$res
+plot(x.personal.income, y.personal.income, xlab="Total.Personal.Income Residuals", ylab="Active.Physicians Residuals", col='Darkblue', pch=3, size=3)
+abline(lm(y.personal.income ~ x.personal.income), col='Darkblue', lwd=2)
+abline(v = 0, col="red", lty=3)
+abline(h = 0, col="red", lty=3)
+```
+
+###### d) Checking linearity with respect to 'hospital.beds.avg'
+```{r}
+y.hospital.beds.avg = update(CDI.mlr.tr1, .~. -hospital.beds.avg)$res
+x.hospital.beds.avg = lm(hospital.beds.avg ~ ., data = CDI_red[,-c(4)])$res
+plot(x.hospital.beds.avg, y.hospital.beds.avg, xlab="Hospital.Beds.Avg Residuals", ylab="Active.Physicians Residuals", col='Darkblue', pch=3, size=3)
+abline(lm(y.hospital.beds.avg ~ x.hospital.beds.avg), col='Darkblue', lwd=2)
+abline(v = 0, col="red", lty=3)
+abline(h = 0, col="red", lty=3)
+```
+
+Observing the four plots above, the points appear to be randomly scattered around the fitted regression line and the blue line is not horizontal for three out of the four predictors except for the `total.personal.income` predictor. Therefore, the linearity assumption fails to be satisfied for the `total.personal.income` predictor.
